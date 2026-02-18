@@ -1,53 +1,50 @@
 const express = require("express");
 const bodyParser = require("body-parser");
-const cors = require("cors");
 const { exec } = require("child_process");
+const fs = require("fs");
 const path = require("path");
 
 const app = express();
-const PORT = process.env.PORT || 10000;
+const PORT = process.env.PORT || 3000;
 
-// Middleware
+// Middleware to parse raw text (Lua script)
+app.use(bodyParser.text({ type: "text/plain" }));
+
+// CORS (so your frontend can call it)
+const cors = require("cors");
 app.use(cors());
-app.use(bodyParser.text({ type: "*/*" }));
 
-// Endpoint
+app.get("/", (req, res) => {
+  res.send("Prometheus Lua Obfuscator Backend is running");
+});
+
 app.post("/obfuscate", (req, res) => {
-  const script = req.body;
+  const luaCode = req.body;
 
-  if (!script || !script.trim()) {
+  if (!luaCode || !luaCode.trim()) {
     return res.status(400).send("No script provided");
   }
 
-  // Save the script temporarily
-  const fs = require("fs");
-  const tmpFile = path.join(__dirname, "tmp.lua");
-  fs.writeFileSync(tmpFile, script);
+  // Save script to a temporary file
+  const tmpFile = path.join(__dirname, "temp.lua");
+  fs.writeFileSync(tmpFile, luaCode);
 
-  // Run Prometheus CLI
-  const prometheusPath = path.join(__dirname, "cli.lua"); // path to your cli.lua
-  const cmd = `lua "${prometheusPath}" --preset Medium "${tmpFile}"`;
-
-  exec(cmd, (error, stdout, stderr) => {
-    // Clean up tmp file
+  // Run Prometheus CLI on the temp file
+  // Adjust --preset as needed: Low, Medium, High
+  exec(`lua cli.lua --preset Medium ${tmpFile}`, (err, stdout, stderr) => {
+    // Remove the temp file after processing
     fs.unlinkSync(tmpFile);
 
-    if (error) {
-      console.error("Prometheus error:", stderr);
-      return res.status(500).send("Obfuscation failed: " + stderr);
+    if (err) {
+      console.error("Obfuscation error:", stderr);
+      return res.status(500).send(stderr || "Error during obfuscation");
     }
 
-    // Return obfuscated script
     res.send(stdout);
   });
 });
 
-// Health check
-app.get("/", (req, res) => {
-  res.send("Prometheus backend is running!");
-});
-
 // Start server
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`Prometheus backend running on port ${PORT}`);
 });
